@@ -1,5 +1,4 @@
 package C101;
-
 use feature qw(state);
 use Moops;
 
@@ -23,6 +22,13 @@ class Model {
         default  => \&_create_uuid,
     );
 
+    has 'children' => (
+        is       => 'rw',
+        isa      => 'ArrayRef[C101::Model]',
+        required => 1,
+        default  => sub { [] },
+    );
+
     method renew_uuid {
         my $old  = $self->uuid;
         $self->uuid(_create_uuid());
@@ -35,24 +41,15 @@ class Model {
     }
 
     method visit(C101::Visitor $visitor, $parent?, $index?) {
-        my $vn    = $self->visit_name;
-        my $begin = "begin_$vn";
-        my $end   = "end_$vn";
+        my $type  = $self->type_name;
+        my $begin = "begin_$type";
+        my $end   = "end_$type";
 
         &{$visitor->$begin}($visitor, $self, $parent, $index);
 
-        if ($self->does('C101::Employees')) {
-            my $empls = $self->employees;
-            for (my $i = 0; $i < @$empls; ++$i) {
-                $empls->[$i]->visit($visitor, $empls, \$i);
-            }
-        }
-
-        if ($self->does('C101::Departments')) {
-            my $depts = $self->departments;
-            for (my $i = 0; $i < @$depts; ++$i) {
-                $depts->[$i]->visit($visitor, $depts, \$i);
-            }
+        my $children = $self->children;
+        for (my $i = 0; $i < @$children; ++$i) {
+            $children->[$i]->visit($visitor, $children, \$i);
         }
 
         &{$visitor->$end}($visitor, $self, $parent, $index);
@@ -60,31 +57,17 @@ class Model {
 }
 
 
-role Departments {
-    has 'departments' => (
-        is       => 'rw',
-        isa      => 'ArrayRef[C101::Department]',
-        required => 1,
-        default  => sub { [] },
-    );
-}
+role Departments {}
 
-role Employees {
-    has 'employees' => (
-        is       => 'rw',
-        isa      => 'ArrayRef[C101::Employee]',
-        required => 1,
-        default  => sub { [] },
-    );
-}
+role Employees   {}
 
 
 class Company    extends Model with Departments {
-    method visit_name { 'company' }
+    method type_name { 'company' }
 }
 
 class Department extends Model with Departments, Employees {
-    method visit_name { 'department' }
+    method type_name { 'department' }
 }
 
 class Employee   extends Model types Types101 {
@@ -100,7 +83,7 @@ class Employee   extends Model types Types101 {
         required => 1,
     );
 
-    method visit_name { 'employee' }
+    method type_name { 'employee' }
 }
 
 __END__
@@ -135,8 +118,8 @@ Gives the object a newly generated UUID. The old UUID is returned.
 =head3 method C101::Model::visit(C101::Visitor $visitor, $parent?, $index?)
 
 Hosts a visit for the given $visitor. This will call the visitor's appropriate I<begin>
-callback, then visit all its Employees and then Departments (if the object implements
-those respective roles) and finally call the visitor's appropriate I<end> callback.
+callback, then visit all its children and finally call the visitor's appropriate I<end>
+callback.
 
 When visiting Employees or Departments, the list that is being iterated through and a
 reference to the iteration index will be passed as $parent and $index respectively. When
