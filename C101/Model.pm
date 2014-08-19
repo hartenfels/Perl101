@@ -56,8 +56,6 @@ class Model {
         &{$visitor->$end}($visitor, $self, $parent, $index);
     }
 
-    method TO_JSON {{type => $self->type_name, state => {opened => 1}, %$self}}
-
     method type_name   { 'root'         }
     method child_types { {company => 1} }
 }
