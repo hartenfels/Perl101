@@ -6,18 +6,23 @@ use Exporter;
 use C101::Visitor;
 
 use vars qw(@ISA @EXPORT_OK);
-@ISA       = ('Exporter');
-@EXPORT_OK = qw(cut depth median remove total uuids);
+@ISA       = qw(Exporter);
+@EXPORT_OK = qw(cut depth median remove remove_uuids total uuids);
 
 
 sub cut {
+    my @cut;
     my $visitor = C101::Visitor->new({
         begin_employee => sub {
             my $e = $_[1];
-            $e->salary($e->salary / 2) if $e->salary;
+            if ($e->salary) {
+                $e->salary($e->salary / 2);
+                push @cut, $e;
+            }
         },
     });
     $_->visit($visitor) for @_;
+    return wantarray ? @cut : \@cut;
 }
 
 sub depth {
@@ -51,9 +56,13 @@ sub median {
 sub remove {
     my ($should_remove, $list) = @_;
 
+    my @removed;
     my $callback = sub {
-        my (undef, $thing, $list, $index) = @_;
-        splice($list, $$index--, 1) if &$should_remove($thing);
+        my (undef, $obj, $list, $index) = @_;
+        if ($should_remove->($obj)) {
+            push @removed, {obj => $obj, list => $list, index => $$index};
+            splice($list, $$index--, 1);
+        }
     };
 
     my $visitor = C101::Visitor->new({
@@ -65,6 +74,22 @@ sub remove {
     for (my $i = 0; $i < @$list; ++$i) {
         $list->[$i]->visit($visitor, $list, \$i);
     }
+    return wantarray ? @removed : \@removed;
+}
+
+sub remove_uuids {
+    my $uuids = shift;
+
+    my $callback = sub { delete $uuids->{$_[1]->id} };
+    my $visitor = C101::Visitor->new({
+        begin_root       => $callback,
+        begin_company    => $callback,
+        begin_department => $callback,
+        begin_employee   => $callback,
+    });
+
+    $_->visit($visitor) for @_;
+    return undef;
 }
 
 sub total {
@@ -79,19 +104,16 @@ sub total {
 }
 
 sub uuids {
-    my $uuids    = {};
-    my $callback = sub {
-        my $u = $_[1]->uuid;
-        die "$u is not unique" if $uuids->{$u};
-        $uuids->{$u} = $_[1];
-    };
+    my $uuids = \%C101::Model::uuids;
+    my $callback = sub { $_[1]->BUILD };
     my $visitor  = C101::Visitor->new({
+        begin_root       => $callback,
         begin_company    => $callback,
         begin_department => $callback,
         begin_employee   => $callback,
     });
     $_->visit($visitor) for @_;
-    return $uuids;
+    return @_;
 }
 
 1;
@@ -99,31 +121,41 @@ __END__
 
 =head2 C101::Operations
 
-Simple feature implementations, like total and cut. Each of the operations takes a list
-of zero or more Companies, Departments and Employees (or a mix of them).
+Simple feature implementations, like total and cut. Each of the operations
+takes a list of zero or more Companies, Departments and Employees (or a mix of
+them).
 
 =head3 cut(Company|Department|Employee, ...)
 
-Implements Feature:Cut. Halves all employees' salaries, salaries of 0 are left alone.
-Nothing is returned.
+Implements Feature:Cut.
+
+Halves all employees' salaries, salaries of 0 are left alone. Depending on
+context a list or list reference of the employees whose salary was cut is
+returned.
 
 =head3 depth(Company|Department|Employee, ...)
 
-Implements Feature:Depth. Returns the maximum depth of the given objects.
+Implements Feature:Depth.
+
+Returns the maximum depth of the given objects.
 
 =head3 median(Company|Department|Employee, ...)
 
-Implements Feature:Median. Returns the median salary of all given employees. If there are
-no employees, 0 will be returned.
+Implements Feature:Median.
+
+Returns the median salary of all given employees. If there are no employees,
+0 will be returned.
 
 =head3 total(Company|Department|Employee, ...)
 
-Implements Feature:Total. Returns the sum of all given employees' salaries.
+Implements Feature:Total.
+
+Returns the sum of all given employees' salaries.
 
 =head3 uuids(Company|Department|Employee, ...)
 
-Returns a reference to a hash mapping from UUIDs to their respective Company, Department
-or Employee. Dies if one of the UUIDs is not actually unique.
+Returns a hash reference mapping from UUIDs to the objects with that UUID. Dies
+if one of the UUIDs is not as unique as it ought to be.
 
 =cut
 
